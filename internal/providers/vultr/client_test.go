@@ -368,6 +368,54 @@ func TestVultrClientAccountIDNamesBothErrorsWhenOrganizationsAreForbidden(t *tes
 	}
 }
 
+func TestVultrClientAccountIDUsesConfiguredIDWithoutAPICalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request %s", r.URL.RequestURI())
+		http.Error(w, "not permitted", http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	t.Setenv("VULTR_API_KEY", "test-token-redact-me")
+	t.Setenv("CRABBOX_VULTR_ACCOUNT_ID", "  example-org  ")
+	client, err := newVultrClient(core.Runtime{HTTP: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.baseURL = server.URL
+	accountID, err := client.AccountID(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accountID != "configured:example-org" {
+		t.Fatalf("accountID=%q", accountID)
+	}
+}
+
+func TestVultrClientAccountIDNamesOrganizationCountWhenAccountIsForbidden(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/account":
+			http.Error(w, `{"error":"Permission denied.","status":403}`, http.StatusForbidden)
+		case "/organizations":
+			_, _ = w.Write([]byte(`{"organizations":[],"meta":{"links":{}}}`))
+		default:
+			t.Fatalf("unexpected request %s", r.URL.RequestURI())
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("VULTR_API_KEY", "test-token-redact-me")
+	client, err := newVultrClient(core.Runtime{HTTP: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.baseURL = server.URL
+	_, err = client.AccountID(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "returned 0 organizations") || !strings.Contains(err.Error(), "CRABBOX_VULTR_ACCOUNT_ID") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestVultrClientDecodesLargeSuccessfulResponses(t *testing.T) {
 	var systems []map[string]any
 	for i := 0; i < 250; i++ {

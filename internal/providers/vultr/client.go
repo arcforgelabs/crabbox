@@ -235,6 +235,11 @@ func retryAfter(value string) time.Duration {
 }
 
 func (c *vultrClient) AccountID(ctx context.Context) (string, error) {
+	// A scoped key may read neither /account nor /organizations; the
+	// operator then names the account for the cleanup claims.
+	if id := strings.TrimSpace(os.Getenv("CRABBOX_VULTR_ACCOUNT_ID")); id != "" {
+		return "configured:" + id, nil
+	}
 	var accountRes struct {
 		Account vultrAccount `json:"account"`
 	}
@@ -251,7 +256,7 @@ func (c *vultrClient) AccountID(ctx context.Context) (string, error) {
 		if len(orgs) == 1 && strings.TrimSpace(orgs[0].ID) != "" {
 			return "org:" + orgs[0].ID, nil
 		}
-		return "", core.Exit(3, "vultr /account is forbidden for this key and /organizations did not return exactly one organization")
+		return "", core.Exit(3, "vultr /account is forbidden for this key and /organizations returned %d organizations, not 1; set CRABBOX_VULTR_ACCOUNT_ID", len(orgs))
 	}
 	if id := strings.TrimSpace(accountRes.Account.UUID); id != "" {
 		return "account:" + id, nil
