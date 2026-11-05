@@ -1,0 +1,41 @@
+# Arc Forge build of this fork: a linux_amd64 tarball made by CI from the
+# pushed tag, for prod-forge-gateway (arcforgelabs/platform versions.yaml pins
+# its URL and sha256). Tags are arcforge-<Y.M.N> on an arcforge/* branch.
+name: arcforge-release
+
+on:
+  push:
+    tags: ["arcforge-*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go test ./internal/providers/linode/
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="0.80.0-${TAG}"
+          go build -trimpath -o dist/crabbox \
+            -ldflags "-s -w -X github.com/openclaw/crabbox/internal/cli.version=${version} -X github.com/openclaw/crabbox/internal/runtimeartifact.distribution=complete" \
+            ./cmd/crabbox
+          tar -C dist -czf "crabbox_${TAG}_linux_amd64.tar.gz" crabbox
+          sha256sum "crabbox_${TAG}_linux_amd64.tar.gz" > "crabbox_${TAG}_linux_amd64.tar.gz.sha256"
+          cat "crabbox_${TAG}_linux_amd64.tar.gz.sha256"
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --verify-tag \
+            --notes "Arc Forge build of ${GITHUB_SHA}: stock v0.80.0 plus gzip Linode user data." \
+            "crabbox_${TAG}_linux_amd64.tar.gz" "crabbox_${TAG}_linux_amd64.tar.gz.sha256"
