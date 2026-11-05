@@ -164,6 +164,10 @@ func (b *linodeLeaseBackend) acquireOnce(ctx context.Context, req core.AcquireRe
 	if cfg.Tailscale.Enabled && cfg.Tailscale.Hostname == "" {
 		cfg.Tailscale.Hostname = core.RenderTailscaleHostname(cfg.Tailscale.HostnameTemplate, leaseID, slug, cfg.Provider)
 	}
+	userData, err := linodeUserData(core.WithGuestLeaseExpiry(cfg, labelsFromTags(leaseTags(cfg, leaseID, slug, "provisioning", req.Keep, now))), publicKey)
+	if err != nil {
+		return core.LeaseTarget{}, err
+	}
 	createReq := createLinodeRequest{
 		Region:         linodeRegionForConfig(cfg),
 		Type:           cfg.ServerType,
@@ -172,7 +176,7 @@ func (b *linodeLeaseBackend) acquireOnce(ctx context.Context, req core.AcquireRe
 		Tags:           leaseTags(cfg, leaseID, slug, "provisioning", req.Keep, now),
 		AuthorizedKeys: []string{publicKey},
 		RootPass:       rootPass,
-		Metadata:       &linodeMetadata{UserData: linodeUserData(core.WithGuestLeaseExpiry(cfg, labelsFromTags(leaseTags(cfg, leaseID, slug, "provisioning", req.Keep, now))), publicKey)},
+		Metadata:       &linodeMetadata{UserData: userData},
 	}
 	if firewallID > 0 {
 		settings, settingsErr := client.AccountSettings(ctx)
