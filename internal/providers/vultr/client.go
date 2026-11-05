@@ -235,11 +235,28 @@ func retryAfter(value string) time.Duration {
 }
 
 func (c *vultrClient) AccountID(ctx context.Context) (string, error) {
+	// A scoped key may read neither /account nor /organizations; the
+	// operator then names the account for the cleanup claims.
+	if id := strings.TrimSpace(os.Getenv("CRABBOX_VULTR_ACCOUNT_ID")); id != "" {
+		return "configured:" + id, nil
+	}
 	var accountRes struct {
 		Account vultrAccount `json:"account"`
 	}
 	if err := c.do(ctx, http.MethodGet, "/account", nil, &accountRes); err != nil {
-		return "", err
+		// A scoped service user may hold no account (billing) permission;
+		// its organization still names the account.
+		if !isVultrForbidden(err) {
+			return "", err
+		}
+		orgs, orgErr := c.listOrganizations(ctx)
+		if orgErr != nil {
+			return "", fmt.Errorf("vultr account identity: %v; %v", err, orgErr)
+		}
+		if len(orgs) == 1 && strings.TrimSpace(orgs[0].ID) != "" {
+			return "org:" + orgs[0].ID, nil
+		}
+		return "", core.Exit(3, "vultr /account is forbidden for this key and /organizations returned %d organizations, not 1; set CRABBOX_VULTR_ACCOUNT_ID", len(orgs))
 	}
 	if id := strings.TrimSpace(accountRes.Account.UUID); id != "" {
 		return "account:" + id, nil
@@ -606,6 +623,11 @@ func (c *vultrClient) paginate(ctx context.Context, path string, fetch func(stri
 func shouldReconcileVultrMutation(err error) bool {
 	var apiErr *vultrAPIError
 	return !errors.As(err, &apiErr) || apiErr.Status >= http.StatusInternalServerError
+}
+
+func isVultrForbidden(err error) bool {
+	var apiErr *vultrAPIError
+	return errors.As(err, &apiErr) && apiErr.Status == http.StatusForbidden
 }
 
 func isVultrNotFound(err error) bool {
