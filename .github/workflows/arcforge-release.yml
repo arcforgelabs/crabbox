@@ -1,11 +1,12 @@
 # Arc Forge build of this fork: a linux_amd64 tarball made by CI from the
-# pushed tag, for prod-forge-gateway (arcforgelabs/platform versions.yaml pins
-# its URL and sha256). Tags are arcforge-<Y.M.N> on an arcforge/* branch.
+# pushed commit, for prod-forge-gateway (arcforgelabs/platform versions.yaml pins
+# its URL and sha256). Each push to an arcforge/* branch makes the release
+# arcforge-<short commit>; the tag is made by the release, at that commit.
 name: arcforge-release
 
 on:
   push:
-    tags: ["arcforge-*"]
+    branches: ["arcforge/**"]
 
 permissions:
   contents: write
@@ -22,8 +23,9 @@ jobs:
       - name: Build
         env:
           CGO_ENABLED: "0"
-          TAG: ${{ github.ref_name }}
         run: |
+          TAG="arcforge-${GITHUB_SHA::7}"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
           version="0.80.0-${TAG}"
           go build -trimpath -o dist/crabbox \
             -ldflags "-s -w -X github.com/openclaw/crabbox/internal/cli.version=${version} -X github.com/openclaw/crabbox/internal/runtimeartifact.distribution=complete" \
@@ -34,8 +36,7 @@ jobs:
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --verify-tag \
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --target "$GITHUB_SHA" \
             --notes "Arc Forge build of ${GITHUB_SHA}: stock v0.80.0 plus gzip Linode user data." \
             "crabbox_${TAG}_linux_amd64.tar.gz" "crabbox_${TAG}_linux_amd64.tar.gz.sha256"
